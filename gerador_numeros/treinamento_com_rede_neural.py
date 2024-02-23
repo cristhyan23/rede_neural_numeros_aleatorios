@@ -82,6 +82,9 @@ def modelo_rede_neural():
 
     return model_nn,data
 
+#TOLERANCIA ACEITA REDE NEURAL:
+tolerancia = 0.002
+valor_esperado = 1
 
 #VALIDADOR ACERTOS
 acertos_quadra = 0
@@ -113,7 +116,7 @@ while aprendizado:
     next_draws_nn = modelo.predict(np.array([sorteio_mega_com_media]))
     print(f'Essa foi a previsão gerada pelo modelo: {next_draws_nn}')
 
-    if next_draws_nn >= 0.99999999999998:
+    if abs(next_draws_nn - valor_esperado) < tolerancia:
         palpite = sorteio_mega
     else:
         palpite = list(np.random.choice(range(1, 61), size=6, replace=False))  # Gerar palpite aleatório
@@ -146,3 +149,4 @@ while aprendizado:
     if acertos_sexta >= 100:
         print(f'Acertos da Sexta:{round(resultado_sexta,2)}%')
         aprendizado = False
+
