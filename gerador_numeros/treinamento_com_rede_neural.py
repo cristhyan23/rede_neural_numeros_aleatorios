@@ -113,7 +113,7 @@ while aprendizado:
     next_draws_nn = modelo.predict(np.array([sorteio_mega_com_media]))
     print(f'Essa foi a previsão gerada pelo modelo: {next_draws_nn}')
 
-    if next_draws_nn > 0.99999999999998:
+    if next_draws_nn >= 0.99999999999998:
         palpite = sorteio_mega
     else:
         palpite = list(np.random.choice(range(1, 61), size=6, replace=False))  # Gerar palpite aleatório
