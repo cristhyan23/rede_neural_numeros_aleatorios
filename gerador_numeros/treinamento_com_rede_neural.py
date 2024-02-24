@@ -1,152 +1,176 @@
 import pandas as pd
 import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 from sklearn.model_selection import train_test_split
-from datetime import datetime
-import tensorflow as tf
-import signal
-import sys
+from collections import Counter
+import matplotlib.pyplot as plt
 
-# Função para tratamento do sinal de interrupção (CTRL+C)
-def handle_ctrl_c(signal, frame):
-    print("\nEncerrando aplicação...")
-    # Encerrar a aplicação
-    sys.exit(0)
+# Load the Mega Sena data
+data = pd.read_csv("./sorteios_mega_sena.csv", parse_dates=["Data"], dayfirst=True)
 
-# Registrar o tratamento do sinal de interrupção (CTRL+C)
-signal.signal(signal.SIGINT, handle_ctrl_c)
-
-# Loop infinito para manter o programa em execução até que o sinal de interrupção seja recebido
-print("Pressione CTRL+C para analisar os dados...")
+# Columns for drawn numbers
+drawn_numbers_cols = ["bola 1", "bola 2", "bola 3", "bola 4", "bola 5", "bola 6"]
 
 
-#MODELO QUE SALVA O RESULTADO DENTRO DO ARQUIVO PARA APRENDIZADO
-def adiciona_data_frame(palpite, data, acerto,bolas_acerto):
-    # Encontrar o maior valor na coluna "Concurso" e incrementar
-    maior_concurso = data['Concurso'].max()
-    novo_concurso = maior_concurso + 1
-    # Criar um novo DataFrame com os valores da nova linha
-    nova_linha = pd.DataFrame({'Concurso': [novo_concurso], 'Data': [datetime.today().strftime('%d/%m/%Y')],
-                               'bola 1': [palpite[0]],
-                               'bola 2': [palpite[1]],
-                               'bola 3': [palpite[2]],
-                               'bola 4': [palpite[3]],
-                               'bola 5': [palpite[4]],
-                               'bola 6': [palpite[5]],
-                               'Acertou': [acerto],
-                               'acertobola1':[bolas_acerto[0]],
-                               'acertobola2':[bolas_acerto[1]],
-                               'acertobola3':[bolas_acerto[2]],
-                               'acertobola4':[bolas_acerto[3]],
-                               'acertobola5':[bolas_acerto[4]],
-                               'acertobola6':[bolas_acerto[5]]})
-    # Concatenar o DataFrame existente com a nova linha
-    data = pd.concat([data, nova_linha], ignore_index=True)
-    # Salvar o DataFrame atualizado de volta para o Excel
-    data.to_csv('./sorteios_mega_sena.csv', index=False)
+
+def plot_learning_curves(history):
+    # Obtém as métricas de treinamento
+    train_loss = history.history['loss']
+    train_accuracy = history.history['accuracy']
+
+    # Obtém as métricas de validação (se disponíveis)
+    if 'val_loss' in history.history:
+        val_loss = history.history['val_loss']
+        val_accuracy = history.history['val_accuracy']
+        has_validation = True
+    else:
+        has_validation = False
+
+    # Cria o gráfico
+    plt.figure(figsize=(12, 6))
+
+    # Plota a perda de treinamento
+    plt.subplot(1, 2, 1)
+    plt.plot(train_loss, label='Training Loss', color='blue')
+    if has_validation:
+        plt.plot(val_loss, label='Validation Loss', color='red')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plota a acurácia de treinamento
+    plt.subplot(1, 2, 2)
+    plt.plot(train_accuracy, label='Training Accuracy', color='blue')
+    if has_validation:
+        plt.plot(val_accuracy, label='Validation Accuracy', color='red')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    # Exibe o gráfico
+    plt.tight_layout()
+    plt.show()
+
+
+def has_duplicates(lst):
+        # Convertendo arrays numpy em tuplas
+        lst_tuples = [tuple(arr) for arr in lst]
+        counts = Counter(lst_tuples)
+        for count in counts.values():
+            if count > 1:
+                return True
+        return False
+
+
+# Function to calculate features
+def calculate_features(data):
+    # Differences between consecutive draws
+    for i in range(1, len(drawn_numbers_cols)):
+        col_name = f'diff_{i}'
+        data[col_name] = data[drawn_numbers_cols].diff(axis=1).iloc[:, i]
+
+    # Number frequencies (last 100 draws)
+    for num in range(1, 61):
+        col_name = f'freq_{num}'
+        data[col_name] = data[drawn_numbers_cols].apply(lambda row: (row == num).sum(), axis=1).rolling(500).mean()
+
+    # Convert the 'Data' column to datetime
+    data['Data'] = pd.to_datetime(data['Data'], format='%d/%m/%Y')
+
+    # Day of the week
+    data['day_of_week'] = data['Data'].dt.dayofweek
+
     return data
 
-
-#FUNÇÃO DE APRENDIZADO DA REDE NEURAL
-def modelo_rede_neural():
-    # Abrir o arquivo Excel
-    data = pd.read_csv("./sorteios_mega_sena.csv")
-
-
-    # Dividir os dados em características (X) e rótulos (y)
-    X = data.drop(columns=["Data", "Acertou", "acertobola1", "acertobola2", "acertobola3", "acertobola4", "acertobola5",
-                           "acertobola6"])  # Características
-    y = data[["Acertou", "acertobola1", "acertobola2", "acertobola3", "acertobola4", "acertobola5",
-              "acertobola6"]]  # Rótulos
-
-    # Dividir os dados em conjunto de treinamento e teste
+# Function to preprocess data for the neural network
+def preprocess_data(data):
+    # Restructure data: Use features from draw 'n' to predict draw 'n + 1'
+    X = data.drop(columns=["Concurso", "Data", "Acertou", "AcertosIndividuais"],axis=1)
+    y = data["Acertou"]
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    return X_train, X_test, y_train, y_test
 
-    # Convertendo os dados para numpy arrays
-    X_train_np = X_train.to_numpy()
-    y_train_np = y_train.to_numpy()
-    X_train_np = X_train_np.astype('float32')
-    y_train_np = y_train_np.astype('float32')
+# Define the neural network model
+def create_model(input_shape):
+    model = Sequential()
+    model.add(Dense(64, activation='relu', input_shape=input_shape))
+    model.add(Dense(32, activation='relu'))
+    model.add(Dense(6, activation='linear'))  # Output 6 numbers (consider rounding)
+    model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
+    return model
 
-    # Construindo o modelo da rede neural
-    model_nn = tf.keras.Sequential([
-        tf.keras.layers.Dense(64, activation='relu', input_shape=(X_train_np.shape[1],)),
-        tf.keras.layers.Dense(64, activation='relu'),
-        tf.keras.layers.Dense(1)
-    ])
 
-    # Compilando o modelo
-    model_nn.compile(optimizer='adam', loss='mean_squared_error')
+# Function to train the model
+def train_model(model, X_train, y_train):
+    model.fit(X_train, y_train, epochs=500, batch_size=32, validation_split=0.1)
 
-    # Treinar o modelo
-    model_nn.fit(X_train_np, y_train_np, epochs=10, batch_size=32, verbose=0)
+# Function to generate predictions
+def generate_predictions(model, X_test):
+    predictions = model.predict(X_test)
+    print("Predictions:", predictions)
+    rounded_predictions = np.round(predictions).astype(int)
+    return predictions.reshape(-1, 6)
 
-    return model_nn,data
 
-#TOLERANCIA ACEITA REDE NEURAL:
-tolerancia = 0.002
-valor_esperado = 1
+# Function to analyze a single draw against predictions
+def analyze_draw(data, draw, predictions):
+    matches = np.all(draw == predictions[0])  # Remova axis=1, pois estamos lidando com um único conjunto de números
+    num_matches = np.sum(draw == predictions[0])  # Remova axis=1, pois estamos lidando com um único conjunto de números
+    new_row = pd.DataFrame({'Concurso': [data['Concurso'].max() + 1],
+                            'Data': [pd.to_datetime('today').strftime('%d/%m/%Y')],
+                            **{f'bola {i + 1}': [int(predictions[0][i])] for i in range(6)},
+                            'Acertou': int(matches.any()),
+                            'AcertosIndividuais': num_matches})
+    # Use pd.concat to add the new row
+    return pd.concat([data, new_row], ignore_index=True)
 
-#VALIDADOR ACERTOS
-acertos_quadra = 0
-num_acerto_quadra = []
-acertos_quina = 0
-num_acerto_quina = []
-acertos_sexta = 0
-num_acerto_sexta = []
-acertou_num = 1
-errou_num = 0
-#variavel para conferir acertos
-aprendizado = True
-rodadas = 0
-# Loop de aprendizado
-while aprendizado:
-#CONTADOR DE ACERTOS
-    numeros_certos = 0
 
-    # Gerar Sorteio dos 6 números
-    sorteio_mega = np.random.choice(range(1, 61), size=6, replace=False)  # Selecionar 6 números aleatórios
+# Preprocess the data (calculate features first)
+data = calculate_features(data.copy())
+X_train, X_test, y_train, y_test = preprocess_data(data)
 
-    # Adicionar uma característica arbitrária
-    media_sorteados = np.mean(sorteio_mega)
-    sorteio_mega_com_media = np.append(sorteio_mega, media_sorteados)
+# Create the model
+model = create_model(X_train.shape[1:])
 
-    #recebe dados gerando dentro do modelo nueral
-    modelo,data = modelo_rede_neural()
-    # Realizar previsão com a rede neural
-    next_draws_nn = modelo.predict(np.array([sorteio_mega_com_media]))
-    print(f'Essa foi a previsão gerada pelo modelo: {next_draws_nn}')
+# Train the model
+train_model(model, X_train, y_train)
 
-    if abs(next_draws_nn - valor_esperado) < tolerancia:
-        palpite = sorteio_mega
-    else:
-        palpite = list(np.random.choice(range(1, 61), size=6, replace=False))  # Gerar palpite aleatório
+#Main Loop
+for _ in range(100):
 
-    bolas_acerto = []
-    for num in sorteio_mega:
-        if num in palpite:  # Verificar se o número está presente no palpite
-            numeros_certos += 1
-            bolas_acerto.append(acertou_num)
-        else:
-            bolas_acerto.append(errou_num)
+    draw = np.random.choice(range(1, 61), size=6, replace=False)
+    # Initialize a set to keep track of unique numbers in predictions
+    predictions = generate_predictions(model, X_test.iloc[-1].to_numpy().reshape(1, -1))
+    # Multiply each predicted number by the corresponding drawn number
+    predictions = np.round(predictions * draw).astype(int)
+    while has_duplicates(predictions):
+        predictions = generate_predictions(model, X_test.iloc[-1].to_numpy().reshape(1, -1))
+        # Multiply each predicted number by the corresponding drawn number
+        predictions = np.round(predictions * draw).astype(int)
 
-    if numeros_certos in (4, 5, 6):
-        if numeros_certos == 4:
-            print('Parabens Você acertou a Quadra')
-            acertos_quadra += 1
-        elif numeros_certos == 5:
-            acertos_quina += 1
-            print('Parabens você acertou a quina')
-        else:  # Quando numeros_certos == 6
-            print('Parabens você acertou a sexta')
-            acertos_sexta += 1
-        data = adiciona_data_frame(palpite, data, 1, bolas_acerto)
-    else:
-        print(f"Que pena você perdeu acertou somente:{numeros_certos} \n Palpite: {palpite} Sorteio: {sorteio_mega}")
-        data = adiciona_data_frame(palpite, data, 0, bolas_acerto)
+    # Convert the unique numbers into a list
+    final_predictions = sorted(list(predictions))
 
-    rodadas += 1
-    resultado_sexta = acertos_sexta/rodadas * 100
-    if acertos_sexta >= 100:
-        print(f'Acertos da Sexta:{round(resultado_sexta,2)}%')
-        aprendizado = False
+    # Analyze draw with the final predictions
+    data = analyze_draw(data, draw, final_predictions)
 
+
+    # Print results
+    print(f"\nDraw: {draw}")
+    print(f"Prediction: {final_predictions[0]}")
+    print(f"Exact Matches: {np.sum(draw == final_predictions)}")  # Print number of exact matches
+
+
+# Converter os valores para o formato desejado ("%d/%m/%Y")
+data['Data'] = pd.to_datetime(data['Data'], format='%d-%m-%Y')
+
+# Salvar o DataFrame no arquivo CSV
+data.to_csv("./sorteios_mega_sena.csv", index=False)
+
+# Treinar o modelo
+history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_train, y_train))
+# Plotar curvas de aprendizado
+plot_learning_curves(history)
