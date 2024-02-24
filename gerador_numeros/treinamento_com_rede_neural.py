@@ -64,7 +64,6 @@ def has_duplicates(lst):
                 return True
         return False
 
-
 # Function to calculate features
 def calculate_features(data):
     # Differences between consecutive draws
@@ -105,7 +104,7 @@ def create_model(input_shape):
 
 # Function to train the model
 def train_model(model, X_train, y_train):
-    model.fit(X_train, y_train, epochs=500, batch_size=32, validation_split=0.1)
+    model.fit(X_train, y_train, epochs=50, batch_size=32, validation_split=0.1)
 
 # Function to generate predictions
 def generate_predictions(model, X_test):
@@ -127,48 +126,53 @@ def analyze_draw(data, draw, predictions):
     # Use pd.concat to add the new row
     return pd.concat([data, new_row], ignore_index=True)
 
+nao_acertou_6_numeros = True
+while nao_acertou_6_numeros:
 
-# Preprocess the data (calculate features first)
-data = calculate_features(data.copy())
-X_train, X_test, y_train, y_test = preprocess_data(data)
+    # Preprocess the data (calculate features first)
+    data = calculate_features(data.copy())
+    X_train, X_test, y_train, y_test = preprocess_data(data)
 
-# Create the model
-model = create_model(X_train.shape[1:])
+    # Create the model
+    model = create_model(X_train.shape[1:])
 
-# Train the model
-train_model(model, X_train, y_train)
+    # Train the model
+    train_model(model, X_train, y_train)
 
-#Main Loop
-for _ in range(100):
+    # Converter os valores para o formato desejado ("%d/%m/%Y")
+    data['Data'] = pd.to_datetime(data['Data'], format='%d-%m-%Y')
 
-    draw = np.random.choice(range(1, 61), size=6, replace=False)
-    # Initialize a set to keep track of unique numbers in predictions
-    predictions = generate_predictions(model, X_test.iloc[-1].to_numpy().reshape(1, -1))
-    # Multiply each predicted number by the corresponding drawn number
-    predictions = np.round(predictions * draw).astype(int)
-    while has_duplicates(predictions):
+    #Main Loop
+    for _ in range(10):
+
+        draw = np.random.choice(range(1, 61), size=6, replace=False)
+        # Initialize a set to keep track of unique numbers in predictions
         predictions = generate_predictions(model, X_test.iloc[-1].to_numpy().reshape(1, -1))
         # Multiply each predicted number by the corresponding drawn number
         predictions = np.round(predictions * draw).astype(int)
+        while has_duplicates(predictions):
+            predictions = generate_predictions(model, X_test.iloc[-1].to_numpy().reshape(1, -1))
+            # Multiply each predicted number by the corresponding drawn number
+            predictions = np.round(predictions * draw).astype(int)
 
-    # Convert the unique numbers into a list
-    final_predictions = sorted(list(predictions))
+        # Convert the unique numbers into a list
+        final_predictions = sorted(list(predictions))
 
-    # Analyze draw with the final predictions
-    data = analyze_draw(data, draw, final_predictions)
-
-
-    # Print results
-    print(f"\nDraw: {draw}")
-    print(f"Prediction: {final_predictions[0]}")
-    print(f"Exact Matches: {np.sum(draw == final_predictions)}")  # Print number of exact matches
+        # Analyze draw with the final predictions
+        data = analyze_draw(data, draw, final_predictions)
 
 
-# Converter os valores para o formato desejado ("%d/%m/%Y")
-data['Data'] = pd.to_datetime(data['Data'], format='%d-%m-%Y')
+        # Print results
+        print(f"\nDraw: {draw}")
+        print(f"Prediction: {final_predictions[0]}")
+        print(f"Exact Matches: {np.sum(draw == final_predictions)}")  # Print number of exact matches
+        #VALIDA SE ACERTOU OS 6 NÚMEROS
+        if np.sum(draw == final_predictions) == 6:
+            nao_acertou_6_numeros = False
 
-# Salvar o DataFrame no arquivo CSV
-data.to_csv("./sorteios_mega_sena.csv", index=False)
+    # Salvar o DataFrame no arquivo CSV
+    data.to_csv("./sorteios_mega_sena.csv", index=False)
+
 
 # Treinar o modelo
 history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_train, y_train))
